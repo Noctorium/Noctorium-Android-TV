@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What a television needs said of the app that includes this, merged into Noctorium-Mobile's manifest.
+
+  Android TV and Google Play only offer an app to a TV when it says it can do without a touchscreen, and runs with the
+  leanback (TV) interface where there is one; neither is required, so phones are offered it as before. The camera and
+  wifi are not required either: a TV has no camera for the QR sign-in, and may be on a cable.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
+</manifest>
