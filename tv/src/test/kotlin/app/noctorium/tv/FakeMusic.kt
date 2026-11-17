@@ -28,6 +28,13 @@ class FakeMusic : TvMusic {
     override suspend fun search(text: String): List<Track> { did += "search $text"; return found }
     override suspend fun stations(query: String) = listOf(song("fm", ProviderType.RADIO))
     override suspend fun playlistTracks(playlist: Playlist) = playlistSongs
+    var artistsFound: List<Playlist> = emptyList()
+    var linkPlays = false
+    override fun artistPage(track: Track): Playlist? =
+        Playlist("artist-named:${track.artistLine}", track.artistLine, track.provider)
+    override suspend fun searchArtists(text: String) = artistsFound
+    override fun playsAsLink(text: String) = linkPlays && text.startsWith("https://")
+    override fun playLink(text: String) { did += "link $text" }
     override fun playFromHome(track: Track, row: List<Track>) { did += "home ${track.id} of ${row.size}" }
     override fun playFromSearch(track: Track, results: List<Track>) { did += "search ${track.id} of ${results.size}" }
     override fun playRecent(track: Track, recent: List<Track>) { did += "recent ${track.id}" }

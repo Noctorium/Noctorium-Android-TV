@@ -30,8 +30,20 @@ interface TvMusic {
     /** Radio stations: the most listened-to in the country chosen in the app, or those [query] finds. */
     suspend fun stations(query: String = ""): List<Track>
 
-    /** A service playlist's songs, read on opening it. */
+    /** A service playlist's songs, read on opening it: an artist's page's too. */
     suspend fun playlistTracks(playlist: Playlist): List<Track>
+
+    /** The page of the artist of [track] on its service, whose songs [playlistTracks] reads; null for none. */
+    fun artistPage(track: Track): Playlist?
+
+    /** Artists for [text], as pages: what Search lists above the songs. */
+    suspend fun searchArtists(text: String): List<Playlist>
+
+    /** Whether [text] is a music link the listener has said should play at once when typed into search. */
+    fun playsAsLink(text: String): Boolean
+
+    /** Plays the music link in [text], as the Link page does. */
+    fun playLink(text: String)
 
     fun playFromHome(track: Track, row: List<Track>)
     fun playFromSearch(track: Track, results: List<Track>)
@@ -61,6 +73,11 @@ class AppStateTvMusic(private val state: AppState) : TvMusic {
     override suspend fun search(text: String) = state.searchQuietly(text)
     override suspend fun stations(query: String) = state.radioStationsQuietly(query)
     override suspend fun playlistTracks(playlist: Playlist) = playlist.tracks.ifEmpty { state.playlistTracks(playlist) }
+    override fun artistPage(track: Track): Playlist? =
+        track.artists.firstOrNull()?.let { state.artistPageQuietly(it, track) }
+    override suspend fun searchArtists(text: String) = state.searchArtistsQuietly(text)
+    override fun playsAsLink(text: String) = state.playsLinksFromSearch(text)
+    override fun playLink(text: String) = state.openLink(text.trim())
 
     override fun playFromHome(track: Track, row: List<Track>) = state.playFromHome(track, row)
     override fun playFromSearch(track: Track, results: List<Track>) = state.playFromSearch(track, results)

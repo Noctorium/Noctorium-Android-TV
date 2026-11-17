@@ -118,4 +118,38 @@ class TvScreensTest {
         compose.onNodeWithTag("open-phone-screens").press()
         assertTrue(openedPhoneScreens == 1)
     }
+
+    @Test
+    fun `the artist on Now playing opens their songs`() {
+        music.playback.value = PlaybackState(status = PlaybackStatus.PLAYING, track = song("e2"), durationMs = 187_000)
+        show()
+        compose.onNodeWithTag("page:NOW_PLAYING").press()
+        compose.onNodeWithTag("artist").press()
+        compose.onNodeWithText("Artist e2").assertIsDisplayed()
+        compose.onNodeWithTag("song:YOUTUBE_MUSIC:p1").press()
+        assertEquals(listOf("playlist artist-named:Artist e2 at p1 of 3"), music.did - "refresh home")
+    }
+
+    @Test
+    fun `search lists artists above the songs`() {
+        music.artistsFound = listOf(Playlist("artist-named:Daft Punk", "Daft Punk", ProviderType.YOUTUBE_MUSIC))
+        show()
+        compose.onNodeWithTag("page:SEARCH").press()
+        compose.onNodeWithTag("search-field").performTextInput("daft punk")
+        compose.onNodeWithTag("search-field").performImeAction()
+        compose.onNodeWithText("Artist · YouTube Music").assertIsDisplayed()
+        compose.onNodeWithTag("tile:playlist:YOUTUBE_MUSIC:artist-named:Daft Punk").press()
+        compose.onNodeWithTag("play-all").press()
+        assertEquals(listOf("search daft punk", "playlist artist-named:Daft Punk at null of 3"), music.did - "refresh home")
+    }
+
+    @Test
+    fun `a link typed into search plays at once when the setting says so`() {
+        music.linkPlays = true
+        show()
+        compose.onNodeWithTag("page:SEARCH").press()
+        compose.onNodeWithTag("search-field").performTextInput("https://soundcloud.com/flume/never-be-like-you")
+        compose.onNodeWithTag("search-field").performImeAction()
+        assertEquals(listOf("link https://soundcloud.com/flume/never-be-like-you"), music.did - "refresh home")
+    }
 }

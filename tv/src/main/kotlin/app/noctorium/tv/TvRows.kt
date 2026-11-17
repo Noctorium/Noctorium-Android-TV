@@ -3,6 +3,7 @@ package app.noctorium.tv
 import app.noctorium.core.AppUiState
 import app.noctorium.core.LibraryState
 import app.noctorium.domain.Playlist
+import app.noctorium.domain.isArtistPage
 import app.noctorium.domain.Track
 import app.noctorium.playback.QueueState
 import app.noctorium.playlists.LocalPlaylist
@@ -26,7 +27,8 @@ sealed interface TvTile {
     data class ServicePlaylist(val playlist: Playlist) : TvTile {
         override val key get() = "playlist:${playlist.provider.name}:${playlist.id}"
         override val title get() = playlist.title
-        override val subtitle get() = (playlist.trackCount ?: playlist.tracks.size.takeIf { it > 0 })?.let(::songs) ?: playlist.ownerName
+        override val subtitle get() = if (playlist.isArtistPage()) "Artist · ${playlist.provider.displayName}"
+            else (playlist.trackCount ?: playlist.tracks.size.takeIf { it > 0 })?.let(::songs) ?: playlist.ownerName
         override val artworkUrl get() = playlist.artworkUrl ?: playlist.tracks.firstOrNull()?.artworkUrl
     }
 

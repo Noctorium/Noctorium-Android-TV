@@ -84,6 +84,7 @@ import app.noctorium.playback.PlaybackState
 import app.noctorium.playback.PlaybackStatus
 import app.noctorium.playback.RepeatMode
 import coil.compose.AsyncImage
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
 /** The pages a TV moves between, in the order the side of the screen lists them. */
@@ -164,9 +165,11 @@ fun NoctoriumTv(music: TvMusic, openPhoneScreens: () -> Unit, modifier: Modifier
                 SongListPage(list) { start, songs -> list.play(start, songs); played() }
             } else {
                 when (page) {
-                    TvPage.NOW_PLAYING -> NowPlayingPage(music, go)
+                    TvPage.NOW_PLAYING -> NowPlayingPage(music, go) { track ->
+                        music.artistPage(track)?.let { page -> openTile(TvTile.ServicePlaylist(page)) {} }
+                    }
                     TvPage.HOME -> HomePage(music) { tile -> openTile(tile) { music.playFromHome(it.track, it.among) } }
-                    TvPage.SEARCH -> SearchPage(music, search) { tile -> openTile(tile) { music.playFromSearch(it.track, it.among) } }
+                    TvPage.SEARCH -> SearchPage(music, search, played) { tile -> openTile(tile) { music.playFromSearch(it.track, it.among) } }
                     TvPage.LIBRARY -> LibraryPage(music) { tile -> openTile(tile) { music.playRecent(it.track, it.among) } }
                     TvPage.QUEUE -> QueuePage(music, played)
                     TvPage.RADIO -> RadioPage(music) { station -> music.playStation(station); played() }
@@ -379,6 +382,7 @@ internal class TvSearchState {
     var query by mutableStateOf("")
     var searched by mutableStateOf<String?>(null)
     var results by mutableStateOf<List<Track>>(emptyList())
+    var artists by mutableStateOf<List<app.noctorium.domain.Playlist>>(emptyList())
     var loading by mutableStateOf(false)
 
     /** Counts the searches, so the first result is given the remote's focus once for each, when it arrives. */
@@ -387,7 +391,7 @@ internal class TvSearchState {
 }
 
 @Composable
-private fun SearchPage(music: TvMusic, search: TvSearchState, onTile: (TvTile) -> Unit) {
+private fun SearchPage(music: TvMusic, search: TvSearchState, played: () -> Unit, onTile: (TvTile) -> Unit) {
     val scope = rememberCoroutineScope()
     val field = remember { FocusRequester() }
     val firstResult = remember { FocusRequester() }
@@ -397,12 +401,20 @@ private fun SearchPage(music: TvMusic, search: TvSearchState, onTile: (TvTile) -
         if (text.isNotEmpty()) {
             // Out of the way of what was found: the TV's keyboard covers half the screen.
             keyboard?.hide()
-            search.loading = true
-            search.searched = text
-            scope.launch {
-                search.results = runCatching { music.search(text) }.getOrDefault(emptyList())
-                search.loading = false
-                search.runs++
+            if (music.playsAsLink(text)) {
+                // A link, played at once when the listener has said so in Settings: no Link page in between.
+                music.playLink(text)
+                played()
+            } else {
+                search.loading = true
+                search.searched = text
+                scope.launch {
+                    val artists = async { runCatching { music.searchArtists(text) }.getOrDefault(emptyList()) }
+                    search.results = runCatching { music.search(text) }.getOrDefault(emptyList())
+                    search.artists = artists.await()
+                    search.loading = false
+                    search.runs++
+                }
             }
         }
     }
@@ -425,7 +437,8 @@ private fun SearchPage(music: TvMusic, search: TvSearchState, onTile: (TvTile) -
             },
         )
         Spacer(Modifier.height(24.dp))
-        val tiles = search.results.map { TvTile.Song(it, search.results) }
+        // The artists first, as cards that open their songs, then the songs.
+        val tiles = search.artists.take(8).map { TvTile.ServicePlaylist(it) } + search.results.map { TvTile.Song(it, search.results) }
         when {
             search.loading -> Note("Searching…")
             search.searched != null && tiles.isEmpty() -> Note("Nothing found for “${search.searched}”.")
@@ -444,7 +457,7 @@ private fun SearchPage(music: TvMusic, search: TvSearchState, onTile: (TvTile) -
     LaunchedEffect(Unit) { if (search.query.isEmpty()) runCatching { field.requestFocus() } }
     // The remote's focus onto what was found: hiding the keyboard leaves it nowhere, and the arrows with it.
     LaunchedEffect(search.runs) {
-        if (search.runs != search.focusedRun && search.results.isNotEmpty()) {
+        if (search.runs != search.focusedRun && (search.results.isNotEmpty() || search.artists.isNotEmpty())) {
             search.focusedRun = search.runs
             withFrameNanos { }
             runCatching { firstResult.requestFocus() }
@@ -506,7 +519,7 @@ private fun RadioPage(music: TvMusic, play: (Track) -> Unit) {
 }
 
 @Composable
-private fun NowPlayingPage(music: TvMusic, go: (TvPage) -> Unit) {
+private fun NowPlayingPage(music: TvMusic, go: (TvPage) -> Unit, openArtist: (Track) -> Unit) {
     val playback by music.playback.collectAsState()
     val queue by music.queue.collectAsState()
     val track = playback.track
@@ -528,7 +541,15 @@ private fun NowPlayingPage(music: TvMusic, go: (TvPage) -> Unit) {
             Spacer(Modifier.width(36.dp))
             Column(Modifier.weight(1f)) {
                 Text(track.title, fontSize = 34.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(track.artistLine, fontSize = 22.sp, color = Quiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // The artist's name opens their page on the song's service, as their songs.
+                Surface(
+                    onClick = { openArtist(track) },
+                    modifier = Modifier.testTag("artist"),
+                    shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+                    colors = ClickableSurfaceDefaults.colors(containerColor = Color.Transparent, contentColor = Quiet, focusedContainerColor = Color.White, focusedContentColor = Color.Black),
+                ) {
+                    Text(track.artistLine, fontSize = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                }
                 track.album?.title?.let { Text(it, fontSize = 17.sp, color = Quiet.copy(alpha = .8f), maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 Spacer(Modifier.height(30.dp))
                 Progress(playback)
