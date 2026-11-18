@@ -3,6 +3,7 @@ package app.noctorium.tv
 import app.noctorium.core.AppState
 import app.noctorium.core.AppUiState
 import app.noctorium.core.LibraryState
+import app.noctorium.domain.HomeSection
 import app.noctorium.domain.PlaybackOrigin
 import app.noctorium.domain.Playlist
 import app.noctorium.domain.Track
@@ -38,6 +39,12 @@ interface TvMusic {
 
     /** Artists for [text], as pages: what Search lists above the songs. */
     suspend fun searchArtists(text: String): List<Playlist>
+
+    /** Playlists for [text], from every service searched: what Search lists after the artists. */
+    suspend fun searchPlaylists(text: String): List<Playlist> = emptyList()
+
+    /** An artist's albums and playlists, row by row, as their page on the service has them; empty for none. */
+    suspend fun artistSections(page: Playlist, songs: List<Track>): List<HomeSection> = emptyList()
 
     /** Whether [text] is a music link the listener has said should play at once when typed into search. */
     fun playsAsLink(text: String): Boolean
@@ -76,6 +83,8 @@ class AppStateTvMusic(private val state: AppState) : TvMusic {
     override fun artistPage(track: Track): Playlist? =
         track.artists.firstOrNull()?.let { state.artistPageQuietly(it, track) }
     override suspend fun searchArtists(text: String) = state.searchArtistsQuietly(text)
+    override suspend fun searchPlaylists(text: String) = state.searchPlaylistsQuietly(text)
+    override suspend fun artistSections(page: Playlist, songs: List<Track>) = state.artistDetailsQuietly(page, songs).sections
     override fun playsAsLink(text: String) = state.playsLinksFromSearch(text)
     override fun playLink(text: String) = state.openLink(text.trim())
 

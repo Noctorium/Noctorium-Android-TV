@@ -80,6 +80,7 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import androidx.tv.material3.darkColorScheme
 import app.noctorium.domain.Track
+import app.noctorium.domain.isArtistPage
 import app.noctorium.playback.PlaybackState
 import app.noctorium.playback.PlaybackStatus
 import app.noctorium.playback.RepeatMode
@@ -104,6 +105,8 @@ private class OpenedList(
     val subtitle: String?,
     val load: suspend () -> List<Track>,
     val play: (startAt: Track?, songs: List<Track>) -> Unit,
+    /** Rows of cards under the songs, once they are read: an artist's albums and playlists. */
+    val rows: (suspend (List<Track>) -> List<TvRow>)? = null,
 )
 
 private val Night = Color(0xFF08070C)
@@ -148,9 +151,17 @@ fun NoctoriumTv(music: TvMusic, openPhoneScreens: () -> Unit, modifier: Modifier
     val openTile: (TvTile, (TvTile.Song) -> Unit) -> Unit = { tile, playSong ->
         when (tile) {
             is TvTile.Song -> { playSong(tile); played() }
-            is TvTile.ServicePlaylist -> opened = OpenedList(tile.title, tile.subtitle, { music.playlistTracks(tile.playlist) }) { start, songs ->
-                music.playPlaylist(tile.playlist, songs, start)
-            }
+            is TvTile.ServicePlaylist -> opened = OpenedList(
+                tile.title,
+                tile.subtitle,
+                { music.playlistTracks(tile.playlist) },
+                { start, songs -> music.playPlaylist(tile.playlist, songs, start) },
+                rows = if (tile.playlist.isArtistPage()) {
+                    { songs -> music.artistSections(tile.playlist, songs).map { section -> TvRow(section.title, null, section.playlists.map { TvTile.ServicePlaylist(it) }) } }
+                } else {
+                    null
+                },
+            )
             is TvTile.LocalList -> opened = OpenedList(tile.title, tile.subtitle, { tile.playlist.tracks }) { start, _ ->
                 music.playLocalPlaylist(tile.playlist, start)
             }
@@ -162,7 +173,7 @@ fun NoctoriumTv(music: TvMusic, openPhoneScreens: () -> Unit, modifier: Modifier
         Box(Modifier.weight(1f).fillMaxHeight()) {
             val list = opened
             if (list != null) {
-                SongListPage(list) { start, songs -> list.play(start, songs); played() }
+                SongListPage(list, { tile -> openTile(tile) { music.playFromHome(it.track, it.among) } }) { start, songs -> list.play(start, songs); played() }
             } else {
                 when (page) {
                     TvPage.NOW_PLAYING -> NowPlayingPage(music, go) { track ->
@@ -344,8 +355,12 @@ private fun LibraryPage(music: TvMusic, onTile: (TvTile) -> Unit) {
 }
 
 @Composable
-private fun SongListPage(list: OpenedList, play: (Track?, List<Track>) -> Unit) {
+private fun SongListPage(list: OpenedList, onTile: (TvTile) -> Unit, play: (Track?, List<Track>) -> Unit) {
     val songs by produceState<List<Track>?>(null, list) { value = runCatching { list.load() }.getOrDefault(emptyList()) }
+    val rows by produceState(emptyList<TvRow>(), list, songs) {
+        val loaded = songs ?: return@produceState
+        value = list.rows?.let { read -> runCatching { read(loaded) }.getOrDefault(emptyList()) }.orEmpty()
+    }
     val first = remember { FocusRequester() }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 40.dp, end = 40.dp, top = 32.dp, bottom = 48.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         item { PageTitle(list.title, list.subtitle) }
@@ -374,6 +389,10 @@ private fun SongListPage(list: OpenedList, play: (Track?, List<Track>) -> Unit) 
                 }
             }
         }
+        // An artist's albums and playlists, under their songs.
+        items(rows, key = { "row:" + it.title }) { row ->
+            Box(Modifier.padding(top = 22.dp)) { TileRow(row, onTile) }
+        }
     }
 }
 
@@ -383,6 +402,7 @@ internal class TvSearchState {
     var searched by mutableStateOf<String?>(null)
     var results by mutableStateOf<List<Track>>(emptyList())
     var artists by mutableStateOf<List<app.noctorium.domain.Playlist>>(emptyList())
+    var playlists by mutableStateOf<List<app.noctorium.domain.Playlist>>(emptyList())
     var loading by mutableStateOf(false)
 
     /** Counts the searches, so the first result is given the remote's focus once for each, when it arrives. */
@@ -410,8 +430,10 @@ private fun SearchPage(music: TvMusic, search: TvSearchState, played: () -> Unit
                 search.searched = text
                 scope.launch {
                     val artists = async { runCatching { music.searchArtists(text) }.getOrDefault(emptyList()) }
+                    val playlists = async { runCatching { music.searchPlaylists(text) }.getOrDefault(emptyList()) }
                     search.results = runCatching { music.search(text) }.getOrDefault(emptyList())
                     search.artists = artists.await()
+                    search.playlists = playlists.await()
                     search.loading = false
                     search.runs++
                 }
@@ -437,8 +459,11 @@ private fun SearchPage(music: TvMusic, search: TvSearchState, played: () -> Unit
             },
         )
         Spacer(Modifier.height(24.dp))
-        // The artists first, as cards that open their songs, then the songs.
-        val tiles = search.artists.take(8).map { TvTile.ServicePlaylist(it) } + search.results.map { TvTile.Song(it, search.results) }
+        // The artists first, as cards that open their songs, then the songs, then playlists.
+        val artistKeys = search.artists.map { it.playlistKey }.toSet()
+        val tiles = search.artists.take(8).map { TvTile.ServicePlaylist(it) } +
+            search.results.map { TvTile.Song(it, search.results) } +
+            search.playlists.filter { it.playlistKey !in artistKeys }.take(12).map { TvTile.ServicePlaylist(it) }
         when {
             search.loading -> Note("Searching…")
             search.searched != null && tiles.isEmpty() -> Note("Nothing found for “${search.searched}”.")

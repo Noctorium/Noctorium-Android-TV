@@ -3,6 +3,7 @@ package app.noctorium.tv
 import app.noctorium.core.AppUiState
 import app.noctorium.core.LibraryState
 import app.noctorium.domain.Playlist
+import app.noctorium.domain.isLikedCollection
 import app.noctorium.domain.isArtistPage
 import app.noctorium.domain.Track
 import app.noctorium.playback.QueueState
@@ -68,7 +69,11 @@ fun homeRows(ui: AppUiState): List<TvRow> = buildList {
 fun libraryRows(ui: AppUiState, library: LibraryState): List<TvRow> = buildList {
     if (ui.recentTracks.isNotEmpty()) add(songRow("Recently played", null, ui.recentTracks))
     if (library.localPlaylists.isNotEmpty()) add(TvRow("Your playlists", "Kept in Noctorium", library.localPlaylists.map { TvTile.LocalList(it) }))
-    if (library.playlists.isNotEmpty()) add(TvRow("On your services", null, library.playlists.map { TvTile.ServicePlaylist(it) }))
+    // Each service's liked songs first, in a row of their own: what is opened most, found first.
+    val liked = library.playlists.filter { it.isLikedCollection() }
+    if (liked.isNotEmpty()) add(TvRow("Liked songs", null, liked.map { TvTile.ServicePlaylist(it) }))
+    val rest = library.playlists.filterNot { it.isLikedCollection() }
+    if (rest.isNotEmpty()) add(TvRow("On your services", null, rest.map { TvTile.ServicePlaylist(it) }))
 }
 
 /** A line of the queue as the TV lists it. */
