@@ -162,9 +162,9 @@ fun NoctoriumTv(music: TvMusic, openPhoneScreens: () -> Unit, modifier: Modifier
                     null
                 },
             )
-            is TvTile.LocalList -> opened = OpenedList(tile.title, tile.subtitle, { tile.playlist.tracks }) { start, _ ->
+            is TvTile.LocalList -> opened = OpenedList(tile.title, tile.subtitle, { tile.playlist.tracks }, play = { start, _ ->
                 music.playLocalPlaylist(tile.playlist, start)
-            }
+            })
         }
     }
 
